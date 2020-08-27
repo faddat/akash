@@ -302,7 +302,6 @@ func (c *client) Inventory(ctx context.Context) ([]cluster.Node, error) {
 
 	nodes := make([]cluster.Node, 0, len(mnodes.Items))
 	for _, mnode := range mnodes.Items {
-
 		knode, ok := knodes[mnode.Name]
 		if !ok {
 			continue
@@ -326,22 +325,35 @@ func (c *client) Inventory(ctx context.Context) ([]cluster.Node, error) {
 			storage = 0
 		}
 
-		unit := types.Unit{
-			CPU:     uint32(cpu),
-			Memory:  uint64(memory),
-			Storage: uint64(storage),
+		// todo (#788) node attributes, for example arch for cpu
+		resources := types.ResourceUnits{
+			CPU: &types.CPU{
+				Units: uint32(cpu),
+			},
+			Memory: &types.Memory{
+				Size: uint64(memory),
+			},
+			Storage: &types.Storage{
+				Size: uint64(storage),
+			},
 		}
 
-		nodes = append(nodes, cluster.NewNode(knode.Name, unit))
+		nodes = append(nodes, cluster.NewNode(knode.Name, resources))
 	}
 
 	if os.Getenv("AKASH_PROVIDER_FAKE_CAPACITY") == "true" {
 		cfg := validation.Config()
 		return []cluster.Node{
-			cluster.NewNode("minikube", types.Unit{
-				CPU:     uint32(cfg.MaxUnitCPU * 100),
-				Memory:  uint64(cfg.MaxUnitMemory * 100),
-				Storage: uint64(cfg.MaxUnitStorage * 100),
+			cluster.NewNode("minikube", types.ResourceUnits{
+				CPU: &types.CPU{
+					Units: uint32(cfg.MaxUnitCPU * 100),
+				},
+				Memory: &types.Memory{
+					Size: uint64(cfg.MaxUnitMemory * 100),
+				},
+				Storage: &types.Storage{
+					Size: uint64(cfg.MaxUnitStorage * 100),
+				},
 			}),
 		}, nil
 	}

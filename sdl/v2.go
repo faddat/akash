@@ -1,90 +1,55 @@
 package sdl
 
 import (
+	"net/url"
 	"sort"
 
 	"github.com/pkg/errors"
-
-	sdk "github.com/cosmos/cosmos-sdk/types"
+	"gopkg.in/yaml.v3"
 
 	"github.com/ovrclk/akash/manifest"
 	"github.com/ovrclk/akash/types"
 	dtypes "github.com/ovrclk/akash/x/deployment/types"
 )
 
-var _ SDL = (*v1)(nil) // Assert interface implementation
-
-type v1 struct {
-	Include  []string `yaml:",omitempty"`
-	Services map[string]v1Service
-	Profiles v1Profiles
-
-	// service-name -> { placement-profile -> { compute-profile, count } }
-	Deployments map[string]v1Deployment `yaml:"deployment"`
+type v2 struct {
+	Include     []string                `yaml:",omitempty"`
+	Services    map[string]v2Service    `yaml:"services,omitempty"`
+	Profiles    v2profiles              `yaml:"profiles,omitempty"`
+	Deployments map[string]v2Deployment `yaml:"deployment"`
 }
 
-type v1Service struct {
+type v2ExposeTo struct {
+	Service string `yaml:"service,omitempty"`
+	Global  bool   `yaml:"global,omitempty"`
+}
+
+type v2Accept struct {
+	Items []string `yaml:"items,omitempty"`
+}
+
+type v2Expose struct {
+	Port   uint16
+	As     uint16
+	Proto  string       `yaml:"proto,omitempty"`
+	To     []v2ExposeTo `yaml:"to,omitempty"`
+	Accept v2Accept     `yaml:"accept"`
+}
+
+type v2Dependency struct {
+	Service string `yaml:"service"`
+}
+
+type v2Service struct {
 	Image        string
 	Command      []string       `yaml:",omitempty"`
 	Args         []string       `yaml:",omitempty"`
 	Env          []string       `yaml:",omitempty"`
-	Expose       []v1Expose     `yaml:",omitempty"`
-	Dependencies []v1Dependency `yaml:",omitempty"`
+	Expose       []v2Expose     `yaml:",omitempty"`
+	Dependencies []v2Dependency `yaml:",omitempty"`
 }
 
-type v1Expose struct {
-	Port   uint16
-	As     uint16
-	Proto  string       `yaml:",omitempty"`
-	To     []v1ExposeTo `yaml:",omitempty"`
-	Accept v1Accept
-}
-
-type v1Accept struct {
-	Items []string `yaml:",omitempty"`
-}
-
-type v1ExposeTo struct {
-	Service string `yaml:",omitempty"`
-	Global  bool   `yaml:",omitempty"`
-}
-
-type v1Dependency struct {
-	Service string
-}
-
-type v1Profiles struct {
-	Compute   map[string]v1ComputeProfile
-	Placement map[string]v1PlacementProfile
-}
-
-type v1ComputeProfile struct {
-	CPU     cpuQuantity `yaml:"cpu"`
-	Memory  byteQuantity
-	Storage byteQuantity
-}
-
-type v1PlacementProfile struct {
-	Attributes map[string]string
-	Pricing    map[string]v1PricingProfile
-}
-
-// TODO: make coin parsing "just work".  wtf.
-type v1PricingProfile struct {
-	Denom  string
-	Amount string
-}
-
-func (pp v1PricingProfile) ToCoin() sdk.Coin {
-	amt, _ := sdk.NewIntFromString(pp.Amount)
-	coin := sdk.NewCoin(pp.Denom, amt)
-	return coin
-}
-
-// placement-profile -> { compute-profile, count }
-type v1Deployment map[string]v1ServiceDeployment
-
-type v1ServiceDeployment struct {
+type v2ServiceDeployment struct {
 	// Compute profile name
 	Profile string
 
@@ -92,19 +57,39 @@ type v1ServiceDeployment struct {
 	Count uint32
 }
 
-func (sdl *v1) DeploymentGroups() ([]*dtypes.GroupSpec, error) {
+// placement-profile -> { compute-profile, count }
+type v2Deployment map[string]v2ServiceDeployment
+
+type v2ProfileCompute struct {
+	// todo are compute resources mandatory ?
+	Resources *v2ComputeResources `yaml:"resources,omitempty"`
+}
+
+type v2PlacementAttributes map[string]interface{}
+
+type v2ProfilePlacement struct {
+	Attributes v2PlacementAttributes `yaml:"attributes"`
+	Pricing    v2PlacementPricing    `yaml:"pricing"`
+}
+
+type v2profiles struct {
+	Compute   map[string]v2ProfileCompute   `yaml:"compute"`
+	Placement map[string]v2ProfilePlacement `yaml:"placement"`
+}
+
+func (sdl *v2) DeploymentGroups() ([]*dtypes.GroupSpec, error) {
 	groups := make(map[string]*dtypes.GroupSpec)
 
-	for _, svcName := range v1DeploymentSvcNames(sdl.Deployments) {
+	for _, svcName := range v2DeploymentSvcNames(sdl.Deployments) {
 		depl := sdl.Deployments[svcName]
 
-		for _, placementName := range v1DeploymentPlacementNames(depl) {
+		for _, placementName := range v2DeploymentPlacementNames(depl) {
 			svcdepl := depl[placementName]
 
-			// compute, ok := sdl.Profiles.Compute[svcdepl.Profile]
-			// if !ok {
-			// 	return nil, errors.Errorf("%v.%v: no compute profile named %v", svcName, placementName, svcdepl.Profile)
-			// }
+			compute, ok := sdl.Profiles.Compute[svcdepl.Profile]
+			if !ok {
+				return nil, errors.Errorf("%v.%v: no compute profile named %v", svcName, placementName, svcdepl.Profile)
+			}
 
 			infra, ok := sdl.Profiles.Placement[placementName]
 			if !ok {
@@ -132,21 +117,19 @@ func (sdl *v1) DeploymentGroups() ([]*dtypes.GroupSpec, error) {
 
 				// keep ordering stable
 				sort.Slice(group.Requirements, func(i, j int) bool {
-					return string(group.Requirements[i].Key) < string(group.Requirements[j].Key)
+					return group.Requirements[i].Key < group.Requirements[j].Key
 				})
 
 				groups[placementName] = group
 			}
 
-			group.Resources = append(group.Resources, dtypes.Resource{
-				// Unit: types.Unit{
-				// 	CPU:     uint32(compute.CPU),
-				// 	Memory:  uint64(compute.Memory),
-				// 	Storage: uint64(compute.Storage),
-				// },
-				Price: price.ToCoin(),
-				Count: svcdepl.Count,
-			})
+			resources := dtypes.Resource{
+				Resources: compute.Resources.toResourceUnits(),
+				Price:     price.Value,
+				Count:     svcdepl.Count,
+			}
+
+			group.Resources = append(group.Resources, resources)
 
 			// TODO: Make a parameter to configure the duration of orders being bid on
 			group.OrderBidDuration = dtypes.DefaultOrderBiddingDuration
@@ -168,13 +151,13 @@ func (sdl *v1) DeploymentGroups() ([]*dtypes.GroupSpec, error) {
 	return result, nil
 }
 
-func (sdl *v1) Manifest() (manifest.Manifest, error) {
+func (sdl *v2) Manifest() (manifest.Manifest, error) {
 	groups := make(map[string]*manifest.Group)
 
-	for _, svcName := range v1DeploymentSvcNames(sdl.Deployments) {
+	for _, svcName := range v2DeploymentSvcNames(sdl.Deployments) {
 		depl := sdl.Deployments[svcName]
 
-		for _, placementName := range v1DeploymentPlacementNames(depl) {
+		for _, placementName := range v2DeploymentPlacementNames(depl) {
 			svcdepl := depl[placementName]
 
 			group := groups[placementName]
@@ -186,10 +169,10 @@ func (sdl *v1) Manifest() (manifest.Manifest, error) {
 				groups[group.Name] = group
 			}
 
-			// compute, ok := sdl.Profiles.Compute[svcdepl.Profile]
-			// if !ok {
-			// 	return nil, errors.Errorf("%v.%v: no compute profile named %v", svcName, placementName, svcdepl.Profile)
-			// }
+			compute, ok := sdl.Profiles.Compute[svcdepl.Profile]
+			if !ok {
+				return nil, errors.Errorf("%v.%v: no compute profile named %v", svcName, placementName, svcdepl.Profile)
+			}
 
 			svc, ok := sdl.Services[svcName]
 			if !ok {
@@ -197,16 +180,12 @@ func (sdl *v1) Manifest() (manifest.Manifest, error) {
 			}
 
 			msvc := &manifest.Service{
-				Name:  svcName,
-				Image: svc.Image,
-				Args:  svc.Args,
-				Env:   svc.Env,
-				// Unit: types.Unit{
-				// 	CPU:     uint32(compute.CPU),
-				// 	Memory:  uint64(compute.Memory),
-				// 	Storage: uint64(compute.Storage),
-				// },
-				Count: svcdepl.Count,
+				Name:      svcName,
+				Image:     svc.Image,
+				Args:      svc.Args,
+				Env:       svc.Env,
+				Resources: compute.Resources.toResourceUnits(),
+				Count:     svcdepl.Count,
 			}
 
 			for _, expose := range svc.Expose {
@@ -265,8 +244,24 @@ func (sdl *v1) Manifest() (manifest.Manifest, error) {
 	return result, nil
 }
 
+func (p *v2Accept) UnmarshalYAML(node *yaml.Node) error {
+	var accept []string
+	if err := node.Decode(&accept); err != nil {
+		return err
+	}
+
+	for _, item := range accept {
+		if _, err := url.ParseRequestURI("http://" + item); err != nil {
+			return err
+		}
+	}
+
+	p.Items = accept
+	return nil
+}
+
 // stable ordering
-func v1DeploymentSvcNames(m map[string]v1Deployment) []string {
+func v2DeploymentSvcNames(m map[string]v2Deployment) []string {
 	names := make([]string, 0, len(m))
 	for name := range m {
 		names = append(names, name)
@@ -276,7 +271,7 @@ func v1DeploymentSvcNames(m map[string]v1Deployment) []string {
 }
 
 // stable ordering
-func v1DeploymentPlacementNames(m v1Deployment) []string {
+func v2DeploymentPlacementNames(m v2Deployment) []string {
 	names := make([]string, 0, len(m))
 	for name := range m {
 		names = append(names, name)

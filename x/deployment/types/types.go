@@ -9,10 +9,10 @@ import (
 // DefaultOrderBiddingDuration is the default time limit for an Order being active.
 // After the duration, the Order is automatically closed.
 // ( 24(hr) * 3600(seconds per hour) ) / 7s-Block
-const DefaultOrderBiddingDuration int64 = int64(12342)
+const DefaultOrderBiddingDuration = int64(12342)
 
 // MaxBiddingDuration is roughly 30 days of block height
-const MaxBiddingDuration int64 = DefaultOrderBiddingDuration * int64(30)
+const MaxBiddingDuration = DefaultOrderBiddingDuration * int64(30)
 
 //go:generate stringer -linecomment -output=autogen_stringer.go -type=DeploymentState,GroupState
 
@@ -62,10 +62,10 @@ const (
 
 // GroupSpec stores group specifications
 type GroupSpec struct {
-	Name             string          `json:"name"`
-	Requirements     []sdk.Attribute `json:"requirements"`
-	Resources        []Resource      `json:"resources"`
-	OrderBidDuration int64           `json:"bid-duration"`
+	Name             string            `json:"name"`
+	Requirements     []types.Attribute `json:"requirements"`
+	Resources        []Resource        `json:"resources"`
+	OrderBidDuration int64             `json:"bid-duration"`
 }
 
 // ValidateBasic asserts non-zero values
@@ -83,14 +83,15 @@ func (g GroupSpec) ValidateBasic() error {
 }
 
 // GetResources method returns resources list in group
-func (g GroupSpec) GetResources() []types.Resource {
-	resources := make([]types.Resource, 0, len(g.Resources))
+func (g GroupSpec) GetResources() []types.Resources {
+	resources := make([]types.Resources, 0, len(g.Resources))
 	for _, r := range g.Resources {
-		resources = append(resources, types.Resource{
-			Unit:  r.Unit,
-			Count: r.Count,
+		resources = append(resources, types.Resources{
+			Resources: r.Resources,
+			Count:     r.Count,
 		})
 	}
+
 	return resources
 }
 
@@ -159,16 +160,16 @@ func (g Group) ValidateClosable() error {
 	}
 }
 
-// Resource stores unit, count and price of each resource
+// Resource stores resources group, count (amount of group) and price of each group
 type Resource struct {
-	Unit  types.Unit `json:"unit"`
-	Count uint32     `json:"count"`
-	Price sdk.Coin   `json:"price"`
+	Resources types.ResourceUnits `json:"resources"`
+	Price     sdk.Coin            `json:"price"`
+	Count     uint32              `json:"count"`
 }
 
-// GetUnit method returns unit of resource
-func (r Resource) GetUnit() types.Unit {
-	return r.Unit
+// GetUnits method returns unit of resource
+func (r Resource) GetResources() types.ResourceUnits {
+	return r.Resources
 }
 
 // GetCount method returns count of resource

@@ -183,16 +183,16 @@ type ManifestService struct {
 }
 
 func (ms ManifestService) toAkash() (manifest.Service, error) {
-	unit, err := ms.Unit.toAkash()
-	if err != nil {
-		return manifest.Service{}, err
-	}
+	// unit, err := ms.Unit.toAkash()
+	// if err != nil {
+	// 	return manifest.Service{}, err
+	// }
 	ams := &manifest.Service{
 		Name:   ms.Name,
 		Image:  ms.Image,
 		Args:   ms.Args,
 		Env:    ms.Env,
-		Unit:   unit,
+		// Unit:   unit,
 		Count:  ms.Count,
 		Expose: make([]manifest.ServiceExpose, 0, len(ms.Expose)),
 	}
@@ -210,7 +210,7 @@ func manifestServiceFromAkash(ams manifest.Service) ManifestService {
 		Image:  ams.Image,
 		Args:   ams.Args,
 		Env:    ams.Env,
-		Unit:   resourceUnitFromAkash(ams.Unit),
+		// Unit:   resourceUnitFromAkash(ams.Unit),
 		Count:  ams.Count,
 		Expose: make([]ManifestServiceExpose, 0, len(ams.Expose)),
 	}
@@ -262,28 +262,28 @@ type ResourceUnit struct {
 	Storage string `json:"storage,omitempty"`
 }
 
-func (ru ResourceUnit) toAkash() (types.Unit, error) {
-	memory, err := strconv.ParseUint(ru.Memory, 10, 64)
-	if err != nil {
-		return types.Unit{}, err
-	}
-	storage, err := strconv.ParseUint(ru.Storage, 10, 64)
-	if err != nil {
-		return types.Unit{}, err
-	}
-
-	return types.Unit{
-		CPU:     ru.CPU,
-		Memory:  memory,
-		Storage: storage,
-	}, nil
-}
+// func (ru ResourceUnit) toAkash() (types.Unit, error) {
+// 	memory, err := strconv.ParseUint(ru.Memory, 10, 64)
+// 	if err != nil {
+// 		return types.Unit{}, err
+// 	}
+// 	storage, err := strconv.ParseUint(ru.Storage, 10, 64)
+// 	if err != nil {
+// 		return types.Unit{}, err
+// 	}
+//
+// 	return types.Unit{
+// 		// CPU:     ru.CPU,
+// 		// Memory:  memory,
+// 		// Storage: storage,
+// 	}, nil
+// }
 
 func resourceUnitFromAkash(aru types.Unit) ResourceUnit {
 	return ResourceUnit{
-		CPU:     aru.CPU,
-		Memory:  strconv.FormatUint(aru.Memory, 10),
-		Storage: strconv.FormatUint(aru.Storage, 10),
+		// CPU:     aru.CPU,
+		// Memory:  strconv.FormatUint(aru.Memory, 10),
+		// Storage: strconv.FormatUint(aru.Storage, 10),
 	}
 }
 

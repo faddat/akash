@@ -45,6 +45,32 @@ func validateResourceLists(config ValConfig, rlists []types.ResourceGroup) error
 	return nil
 }
 
+type resourceLimits struct {
+	cpu     sdk.Uint
+	memory  sdk.Uint
+	storage sdk.Uint
+}
+
+func newLimits() resourceLimits {
+	return resourceLimits{
+		cpu:     sdk.ZeroUint(),
+		memory:  sdk.ZeroUint(),
+		storage: sdk.ZeroUint(),
+	}
+}
+
+func (u *resourceLimits) add(rhs resourceLimits) {
+	u.cpu.Add(rhs.cpu)
+	u.memory.Add(rhs.memory)
+	u.storage.Add(rhs.storage)
+}
+
+func (u *resourceLimits) mul(count uint32) {
+	u.cpu.MulUint64(uint64(count))
+	u.memory.MulUint64(uint64(count))
+	u.storage.MulUint64(uint64(count))
+}
+
 func validateResourceList(config ValConfig, rlist types.ResourceGroup) error {
 	if rlist.GetName() == "" {
 		return ErrGroupEmptyName
@@ -56,56 +82,54 @@ func validateResourceList(config ValConfig, rlist types.ResourceGroup) error {
 		return errors.Errorf("group %v: too many units (%v > %v)", rlist.GetName(), count, config.MaxGroupUnits)
 	}
 
-	var (
-		cpu     = sdk.ZeroUint()
-		mem     = sdk.ZeroUint()
-		storage = sdk.ZeroUint()
-	)
+	limits := newLimits()
 
 	for _, resource := range units {
-
-		if err := validateResourceGroup(config, resource); err != nil {
+		gLimits, err := validateResourceGroup(config, resource)
+		if err != nil {
 			return fmt.Errorf("group %v: %w", rlist.GetName(), err)
 		}
 
-		cpu = cpu.Add(sdk.NewUint(uint64(resource.Unit.CPU)).MulUint64(uint64(resource.Count)))
-		mem = mem.Add(sdk.NewUint(resource.Unit.Memory).MulUint64(uint64(resource.Count)))
-		storage = storage.Add(sdk.NewUint(resource.Unit.Storage).MulUint64(uint64(resource.Count)))
+		gLimits.mul(resource.Count)
+
+		limits.add(gLimits)
 
 		// TODO: validate pricing
 		// if idx == 0 {
 		// 	price = resource.Price
 		// } else {
 		// 	if resource.Price.Denom != price.Denom {
-		// 		return fmt.Errorf("mixed denonimations: (%v != %v)", price.Denom, resource.Price.Denom)
+		// 		return fmt.Errorf("mixed denominations: (%v != %v)", price.Denom, resource.Price.Denom)
 		// 	}
 		// }
 	}
 
-	if cpu.GT(sdk.NewUint(uint64(config.MaxGroupCPU))) || cpu.LTE(sdk.ZeroUint()) {
+	if limits.cpu.GT(sdk.NewUint(uint64(config.MaxGroupCPU))) || limits.cpu.LTE(sdk.ZeroUint()) {
 		return errors.Errorf("group %v: invalid total cpu (%v > %v > %v fails)",
-			rlist.GetName(), config.MaxGroupCPU, cpu, 0)
+			rlist.GetName(), config.MaxGroupCPU, limits.cpu, 0)
 	}
 
-	if mem.GT(sdk.NewUint(uint64(config.MaxGroupMemory))) || mem.LTE(sdk.ZeroUint()) {
+	if limits.memory.GT(sdk.NewUint(uint64(config.MaxGroupMemory))) || limits.memory.LTE(sdk.ZeroUint()) {
 		return errors.Errorf("group %v: invalid total memory (%v > %v > %v fails)",
-			rlist.GetName(), config.MaxGroupMemory, mem, 0)
+			rlist.GetName(), config.MaxGroupMemory, limits.memory, 0)
 	}
 
-	if storage.GT(sdk.NewUint(uint64(config.MaxGroupStorage))) || storage.LTE(sdk.ZeroUint()) {
+	if limits.storage.GT(sdk.NewUint(uint64(config.MaxGroupStorage))) || limits.storage.LTE(sdk.ZeroUint()) {
 		return errors.Errorf("group %v: invalid total storage (%v > %v > %v fails)",
-			rlist.GetName(), config.MaxGroupStorage, storage, 0)
+			rlist.GetName(), config.MaxGroupStorage, limits.storage, 0)
 	}
 
 	return nil
 }
 
-func validateResourceGroup(config ValConfig, rg types.Resource) error {
-	if err := validateResourceUnit(config, rg.Unit); err != nil {
-		return nil
+func validateResourceGroup(config ValConfig, rg types.Resources) (resourceLimits, error) {
+	limits, err := validateResourceUnit(config, rg.Resources)
+	if err != nil {
+		return resourceLimits{}, nil
 	}
+
 	if rg.Count > uint32(config.MaxUnitCount) || rg.Count < uint32(config.MinUnitCount) {
-		return errors.Errorf("error: invalid unit count (%v > %v > %v fails)",
+		return resourceLimits{}, errors.Errorf("error: invalid unit count (%v > %v > %v fails)",
 			config.MaxUnitCount, rg.Count, config.MinUnitCount)
 	}
 
@@ -114,21 +138,35 @@ func validateResourceGroup(config ValConfig, rg types.Resource) error {
 	// 	return fmt.Errorf("error: invalid unit price (not positive fails)")
 	// }
 
-	return nil
+	return limits, nil
 }
 
-func validateResourceUnit(config ValConfig, unit types.Unit) error {
-	if unit.CPU > uint32(config.MaxUnitCPU) || unit.CPU < uint32(config.MinUnitCPU) {
-		return errors.Errorf("error: invalide unit cpu (%v > %v > %v fails)",
-			config.MaxUnitCPU, unit.CPU, config.MinUnitCPU)
+func validateResourceUnit(config ValConfig, units types.ResourceUnits) (resourceLimits, error) {
+	limits := newLimits()
+
+	if u := units.CPU; u != nil {
+		if (u.Units.Value() > uint64(config.MaxUnitCPU)) || (u.Units.Value() < uint64(config.MinUnitCPU)) {
+			return resourceLimits{}, errors.Errorf("error: invalid unit cpu (%v > %v > %v fails)",
+				config.MaxUnitCPU, u.Units, config.MinUnitCPU)
+		}
+		limits.cpu.Add(sdk.NewUint(u.Units.Value()))
 	}
-	if unit.Memory > uint64(config.MaxUnitMemory) || unit.Memory < uint64(config.MinUnitMemory) {
-		return errors.Errorf("error: invalid unit memory (%v > %v > %v fails)",
-			config.MaxUnitMemory, unit.Memory, config.MinUnitMemory)
+
+	if u := units.Memory; u != nil {
+		if (u.Size.Value() > uint64(config.MaxUnitMemory)) || (u.Size.Value() < uint64(config.MinUnitMemory)) {
+			return resourceLimits{}, errors.Errorf("error: invalid unit memory (%v > %v > %v fails)",
+				config.MaxUnitMemory, u.Size, config.MinUnitMemory)
+		}
+		limits.memory.Add(sdk.NewUint(u.Size.Value()))
 	}
-	if unit.Storage > uint64(config.MaxUnitStorage) || unit.Storage < uint64(config.MinUnitStorage) {
-		return errors.Errorf("error: invalid unit storage (%v > %v > %v fails)",
-			config.MaxUnitStorage, unit.Storage, config.MinUnitStorage)
+
+	if u := units.Storage; u != nil {
+		if (u.Size.Value() > uint64(config.MaxUnitStorage)) || (u.Size.Value() < uint64(config.MinUnitStorage)) {
+			return resourceLimits{}, errors.Errorf("error: invalid unit storage (%v > %v > %v fails)",
+				config.MaxUnitStorage, u.Size, config.MinUnitStorage)
+		}
+		limits.storage.Add(sdk.NewUint(u.Size.Value()))
 	}
-	return nil
+
+	return limits, nil
 }

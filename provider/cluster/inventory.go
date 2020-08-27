@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	lifecycle "github.com/boz/go-lifecycle"
+	"github.com/boz/go-lifecycle"
 	"github.com/tendermint/tendermint/libs/log"
 
 	"github.com/ovrclk/akash/provider/event"
@@ -326,12 +326,18 @@ func (is *inventoryService) getStatus(
 	status := InventoryStatus{}
 
 	for _, reservation := range reservations {
-		total := atypes.Unit{}
+		total := atypes.ResourceUnits{}
 
 		for _, resource := range reservation.Resources().GetResources() {
-			total.CPU += resource.Unit.CPU
-			total.Memory += resource.Unit.Memory
-			total.Storage += resource.Unit.Storage
+			// todo check overflow error
+			_, _ = total.Add(resource.Resources)
+			// for _, u := range resource.Units {
+			// 	total.AddUnit(u)
+			// }
+			// total.Add(resource.Units)
+			// total.CPU += resource.Unit.CPU
+			// total.Memory += resource.Unit.Memory
+			// total.Storage += resource.Unit.Storage
 		}
 
 		if reservation.allocated {
@@ -342,18 +348,18 @@ func (is *inventoryService) getStatus(
 	}
 
 	for _, node := range inventory {
-		status.Available = append(status.Available, atypes.Unit{
-			CPU:     node.Available().CPU,
-			Memory:  node.Available().Memory,
-			Storage: node.Available().Storage,
-		})
+		status.Available = append(status.Available, node.Available())
+		// status.Available = append(status.Available, atypes.Unit{
+		// 	CPU:     node.Available().CPU,
+		// 	Memory:  node.Available().Memory,
+		// 	Storage: node.Available().Storage,
+		// })
 	}
 
 	return status
 }
 
 func reservationAllocateable(inventory []Node, reservations []*reservation, newReservation *reservation) bool {
-
 	// 1. for each unallocated reservation, subtract its resources
 	//    from inventory.
 	// 2. subtract resources for new reservation from inventory.
@@ -377,33 +383,25 @@ func reservationAllocateable(inventory []Node, reservations []*reservation, newR
 }
 
 func reservationAdjustInventory(prevInventory []Node, reservation *reservation) ([]Node, bool) {
-
 	// for each node in the inventory
 	//   subtract resource capacity from node capacity if the former will fit in the latter
 	//   remove resource capacity that fit in node capacity from requested resource capacity
-	// return remaining inventory, true iff all resources were able to fit
+	// return remaining inventory, true if all resources were able to fit
 
-	resources := make([]atypes.Resource, len(reservation.resources.GetResources()))
+	resources := make([]atypes.Resources, len(reservation.resources.GetResources()))
 	copy(resources, reservation.resources.GetResources())
 
 	inventory := make([]Node, 0, len(prevInventory))
 
 	for _, node := range prevInventory {
 		available := node.Available()
-
 		curResources := resources[:0]
 
 		for _, resource := range resources {
-
 			for ; resource.Count > 0; resource.Count-- {
-				if available.CPU < resource.Unit.CPU ||
-					available.Memory < resource.Unit.Memory ||
-					available.Storage < resource.Unit.Storage {
+				if _, err := available.Sub(resource.Resources); err != nil {
 					break
 				}
-				available.CPU -= resource.Unit.CPU
-				available.Memory -= resource.Unit.Memory
-				available.Storage -= resource.Unit.Storage
 			}
 
 			if resource.Count > 0 {

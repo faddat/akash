@@ -141,8 +141,8 @@ func (b *deploymentBuilder) update(obj *appsv1.Deployment) (*appsv1.Deployment, 
 }
 
 func (b *deploymentBuilder) container() corev1.Container {
-	qcpu := resource.NewScaledQuantity(int64(b.service.Unit.CPU), resource.Milli)
-	qmem := resource.NewQuantity(int64(b.service.Unit.Memory), resource.DecimalSI)
+	qcpu := resource.NewScaledQuantity(int64(b.service.Resources.CPU.Units), resource.Milli)
+	qmem := resource.NewQuantity(int64(b.service.Resources.Memory.Size), resource.DecimalSI)
 	privileged := false
 	allowPrivilegeEscalation := false
 
