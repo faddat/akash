@@ -328,13 +328,13 @@ func (c *client) Inventory(ctx context.Context) ([]cluster.Node, error) {
 		// todo (#788) node attributes, for example arch for cpu
 		resources := types.ResourceUnits{
 			CPU: &types.CPU{
-				Units: uint32(cpu),
+				Units: types.NewResourceValue(uint64(cpu)),
 			},
 			Memory: &types.Memory{
-				Size: uint64(memory),
+				Size: types.NewResourceValue(uint64(memory)),
 			},
 			Storage: &types.Storage{
-				Size: uint64(storage),
+				Size: types.NewResourceValue(uint64(storage)),
 			},
 		}
 
@@ -346,13 +346,13 @@ func (c *client) Inventory(ctx context.Context) ([]cluster.Node, error) {
 		return []cluster.Node{
 			cluster.NewNode("minikube", types.ResourceUnits{
 				CPU: &types.CPU{
-					Units: uint32(cfg.MaxUnitCPU * 100),
+					Units: types.NewResourceValue(uint64(cfg.MaxUnitCPU * 100)),
 				},
 				Memory: &types.Memory{
-					Size: uint64(cfg.MaxUnitMemory * 100),
+					Size: types.NewResourceValue(uint64(cfg.MaxUnitMemory * 100)),
 				},
 				Storage: &types.Storage{
-					Size: uint64(cfg.MaxUnitStorage * 100),
+					Size: types.NewResourceValue(uint64(cfg.MaxUnitStorage * 100)),
 				},
 			}),
 		}, nil

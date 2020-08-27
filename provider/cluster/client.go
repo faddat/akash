@@ -159,13 +159,13 @@ func (c *nullClient) Inventory(ctx context.Context) ([]Node, error) {
 	return []Node{
 		NewNode("solo", atypes.ResourceUnits{
 			CPU: &atypes.CPU{
-				Units: nullClientCPU,
+				Units: atypes.NewResourceValue(nullClientCPU),
 			},
 			Memory: &atypes.Memory{
-				Size: nullClientMemory,
+				Size: atypes.NewResourceValue(nullClientMemory),
 			},
 			Storage: &atypes.Storage{
-				Size: nullClientStorage,
+				Size: atypes.NewResourceValue(nullClientStorage),
 			},
 		}),
 	}, nil
