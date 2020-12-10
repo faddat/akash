@@ -9,7 +9,7 @@ on: [push, pull_request]
 
 jobs:
   pi:
-    name: SPN Pi
+    name: Akash Pi
     runs-on: ubuntu-latest
     steps:
       - name: checkout
